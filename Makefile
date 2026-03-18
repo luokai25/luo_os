@@ -5,44 +5,36 @@ LDFLAGS = -m elf_i386 -T linker.ld
 GRUB_CFG = isodir/boot/grub/grub.cfg
 ISO      = luo_os.iso
 
+BOOT_OBJS = boot/boot.o boot/isr.o boot/context_switch.o
+KERN_OBJS = kernel/serial.o kernel/idt.o kernel/timer.o kernel/keyboard.o \
+            kernel/memory.o kernel/fs.o kernel/process.o \
+            kernel/shell.o kernel/kernel.o
+
 all: $(ISO)
 
-boot/boot.o: boot/boot.asm
-	nasm -f elf32 boot/boot.asm -o boot/boot.o
+boot/%.o: boot/%.asm
+	nasm -f elf32 $< -o $@
 
-boot/isr.o: boot/isr.asm
-	nasm -f elf32 boot/isr.asm -o boot/isr.o
+kernel/%.o: kernel/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-kernel/idt.o: kernel/idt.c
-	$(CC) $(CFLAGS) -c kernel/idt.c -o kernel/idt.o
-
-kernel/keyboard.o: kernel/keyboard.c
-	$(CC) $(CFLAGS) -c kernel/keyboard.c -o kernel/keyboard.o
-
-kernel/serial.o: kernel/serial.c
-	$(CC) $(CFLAGS) -c kernel/serial.c -o kernel/serial.o
-
-kernel/kernel.o: kernel/kernel.c
-	$(CC) $(CFLAGS) -c kernel/kernel.c -o kernel/kernel.o
-
-kernel.bin: boot/boot.o boot/isr.o kernel/idt.o kernel/keyboard.o kernel/serial.o kernel/kernel.o
-	ld $(LDFLAGS) -o kernel.bin boot/boot.o boot/isr.o kernel/idt.o kernel/keyboard.o kernel/serial.o kernel/kernel.o
+kernel.bin: $(BOOT_OBJS) $(KERN_OBJS)
+	ld $(LDFLAGS) -o $@ $^
 
 $(GRUB_CFG):
 	@mkdir -p isodir/boot/grub
-	@echo 'set timeout=0'                   > $(GRUB_CFG)
-	@echo 'set default=0'                  >> $(GRUB_CFG)
-	@echo 'menuentry "luo_os" {'           >> $(GRUB_CFG)
-	@echo '    multiboot /boot/kernel.bin' >> $(GRUB_CFG)
-	@echo '    boot'                       >> $(GRUB_CFG)
-	@echo '}'                              >> $(GRUB_CFG)
+	@printf 'set timeout=0\nset default=0\nmenuentry "luo_os" {\n    multiboot /boot/kernel.bin\n    boot\n}\n' > $(GRUB_CFG)
 
 $(ISO): kernel.bin $(GRUB_CFG)
 	cp kernel.bin isodir/boot/kernel.bin
-	grub-mkrescue -o $(ISO) isodir
+	grub-mkrescue -o $(ISO) isodir 2>/dev/null
 
 run: $(ISO)
-	qemu-system-i386 -cdrom $(ISO) -serial mon:stdio -display none -m 32M -no-reboot -no-shutdown
+	qemu-system-i386 -cdrom $(ISO) \
+	    -chardev stdio,id=s0,mux=on,signal=off \
+	    -serial chardev:s0 \
+	    -mon chardev=s0,mode=readline \
+	    -display none -m 64M -no-reboot -no-shutdown
 
 clean:
 	rm -f boot/*.o kernel/*.o kernel.bin $(ISO)

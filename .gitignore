@@ -1,0 +1,9 @@
+*.o
+*.bin
+*.iso
+isodir/
+agent/__pycache__/
+agent/agent.log
+agent/commands.json
+agent/results.json
+*.pyc
